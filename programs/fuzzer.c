@@ -208,12 +208,12 @@ static int FUZ_AddressOverflow(void)
     int i, nbBuff=0;
     int highAddress = 0;
 
-    printf("Overflow tests : ");
+    DISPLAY("Overflow tests : ");
 
     /* Only possible in 32-bits */
     if (sizeof(void*)==8)
     {
-        printf("64 bits mode : no overflow \n");
+        DISPLAY("64 bits mode : no overflow \n");
         fflush(stdout);
         return 0;
     }
@@ -222,23 +222,23 @@ static int FUZ_AddressOverflow(void)
     buffers[1] = (char*)malloc(BLOCKSIZE_I134);
     if ((!buffers[0]) || (!buffers[1]))
     {
-        printf("not enough memory for tests \n");
+        DISPLAY("not enough memory for tests \n");
         return 0;
     }
+
     for (nbBuff=2; nbBuff < MAX_NB_BUFF_I134; nbBuff++)
     {
-        printf("%3i \b\b\b\b", nbBuff);
+        DISPLAY("%3i \b\b\b\b", nbBuff);
         buffers[nbBuff] = (char*)malloc(BLOCKSIZE_I134);
-        //printf("%08X ", (U32)(size_t)(buffers[nbBuff]));
-        fflush(stdout);
+        if (buffers[nbBuff]==NULL) goto _endOfTests;
+        //DISPLAY("%08X ", (U32)(size_t)(buffers[nbBuff])); fflush(stdout);
 
         if (((size_t)buffers[nbBuff] > (size_t)0x80000000) && (!highAddress))
         {
-            printf("high address detected : ");
+            DISPLAY("high address detected : ");
             fflush(stdout);
             highAddress=1;
         }
-        if (buffers[nbBuff]==NULL) goto _endOfTests;
 
         {
             size_t sizeToGenerateOverflow = (size_t)(- ((size_t)buffers[nbBuff-1]) + 512);
@@ -279,12 +279,12 @@ static int FUZ_AddressOverflow(void)
     nbBuff++;
 _endOfTests:
     for (i=0 ; i<nbBuff; i++) free(buffers[i]);
-    if (!highAddress) printf("high address not possible \n");
-    else printf("all overflows correctly detected \n");
+    if (!highAddress) DISPLAY("high address not possible \n");
+    else DISPLAY("all overflows correctly detected \n");
     return 0;
 
 _overflowError:
-    printf("Address space overflow error !! \n");
+    DISPLAY("Address space overflow error !! \n");
     exit(1);
 }
 
@@ -407,7 +407,7 @@ static int FUZ_test(U32 seed, U32 nbCycles, const U32 startCycle, const double c
             FUZ_CHECKTEST(ret > targetSize, "LZ4_compress_destSize() result larger than dst buffer !");
             FUZ_CHECKTEST(compressedBuffer[targetSize] != endCheck, "LZ4_compress_destSize() overwrite dst buffer !");
             FUZ_CHECKTEST(srcSize > blockSize, "LZ4_compress_destSize() fed more than src buffer !");
-            DISPLAY("destSize : %7i/%7i; content%7i/%7i ", ret, targetSize, srcSize, blockSize);
+            DISPLAYLEVEL(5, "destSize : %7i/%7i; content%7i/%7i ", ret, targetSize, srcSize, blockSize);
             if (targetSize>0)
             {
                 FUZ_CHECKTEST((ret==0), "LZ4_compress_destSize() compression failed");
@@ -425,10 +425,10 @@ static int FUZ_test(U32 seed, U32 nbCycles, const U32 startCycle, const double c
                 crcCheck = XXH32(decodedBuffer, srcSize, 0);
                 FUZ_CHECKTEST(crcCheck!=crcOrig, "LZ4_decompress_safe() corrupted decoded data");
 
-                DISPLAY(" OK \n");
+                DISPLAYLEVEL(5, " OK \n");
             }
             else
-                DISPLAY(" \n");
+                DISPLAYLEVEL(5, " \n");
         }
 
         /* Test compression HC */

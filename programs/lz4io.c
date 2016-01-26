@@ -64,11 +64,16 @@
 #if defined(MSDOS) || defined(OS2) || defined(WIN32) || defined(_WIN32)
 #  include <fcntl.h>   /* _O_BINARY */
 #  include <io.h>      /* _setmode, _fileno, _get_osfhandle */
-#  define SET_BINARY_MODE(file) _setmode(_fileno(file), _O_BINARY)
-#  include <Windows.h> /* DeviceIoControl, HANDLE, FSCTL_SET_SPARSE */
-#  define SET_SPARSE_FILE_MODE(file) { DWORD dw; DeviceIoControl((HANDLE) _get_osfhandle(_fileno(file)), FSCTL_SET_SPARSE, 0, 0, 0, 0, &dw, 0); }
-#  if defined(_MSC_VER) && (_MSC_VER >= 1400)  /* Avoid MSVC fseek()'s 2GiB barrier */
-#    define fseek _fseeki64
+#  if !defined(__DJGPP__)
+#    define SET_BINARY_MODE(file) { int unused=_setmode(_fileno(file), _O_BINARY); (void)unused; }
+#    include <Windows.h> /* DeviceIoControl, HANDLE, FSCTL_SET_SPARSE */
+#    define SET_SPARSE_FILE_MODE(file) { DWORD dw; DeviceIoControl((HANDLE) _get_osfhandle(_fileno(file)), FSCTL_SET_SPARSE, 0, 0, 0, 0, &dw, 0); }
+#    if defined(_MSC_VER) && (_MSC_VER >= 1400)  /* Avoid MSVC fseek()'s 2GiB barrier */
+#      define fseek _fseeki64
+#    endif
+#  else
+#    define SET_BINARY_MODE(file) setmode(fileno(file), O_BINARY)
+#    define SET_SPARSE_FILE_MODE(file)
 #  endif
 #else
 #  define SET_BINARY_MODE(file)
@@ -871,9 +876,11 @@ static unsigned long long LZ4IO_decompressLZ4F(dRess_t ress, FILE* srcFile, FILE
 }
 
 
+#define PTSIZE  (64 KB)
+#define PTSIZET (PTSIZE / sizeof(size_t))
 static unsigned long long LZ4IO_passThrough(FILE* finput, FILE* foutput, unsigned char MNstore[MAGICNUMBER_SIZE])
 {
-    void* buffer = malloc(64 KB);
+	size_t buffer[PTSIZET];
     size_t read = 1, sizeCheck;
     unsigned long long total = MAGICNUMBER_SIZE;
     unsigned storedSkips = 0;
@@ -883,13 +890,12 @@ static unsigned long long LZ4IO_passThrough(FILE* finput, FILE* foutput, unsigne
 
     while (read)
     {
-        read = fread(buffer, 1, 64 KB, finput);
+        read = fread(buffer, 1, PTSIZE, finput);
         total += read;
         storedSkips = LZ4IO_fwriteSparse(foutput, buffer, read, storedSkips);
     }
 
     LZ4IO_fwriteSparseEnd(foutput, storedSkips);
-    free(buffer);
     return total;
 }
 
@@ -1007,6 +1013,7 @@ int LZ4IO_decompressFilename(const char* input_filename, const char* output_file
 }
 
 
+#define MAXSUFFIXSIZE 8
 int LZ4IO_decompressMultipleFilenames(const char** inFileNamesTable, int ifntSize, const char* suffix)
 {
     int i;
@@ -1015,17 +1022,18 @@ int LZ4IO_decompressMultipleFilenames(const char** inFileNamesTable, int ifntSiz
     char* outFileName = (char*)malloc(FNSPACE);
     size_t ofnSize = FNSPACE;
     const size_t suffixSize = strlen(suffix);
-    char* ifnSuffix = (char*)malloc(suffixSize + 1);
+    const char* suffixPtr;
     dRess_t ress;
 
+	if (outFileName==NULL) exit(1);   /* not enough memory */
     ress = LZ4IO_createDResources();
 
     for (i=0; i<ifntSize; i++)
     {
         size_t ifnSize = strlen(inFileNamesTable[i]);
-        strcpy(ifnSuffix, inFileNamesTable[i] + ifnSize - suffixSize);
-        if (ofnSize <= ifnSize-suffixSize+1) { free(outFileName); ofnSize = ifnSize + 20; outFileName = (char*)malloc(ofnSize); }
-        if (ifnSize <= suffixSize  ||  strcmp(ifnSuffix, suffix) != 0)
+        suffixPtr = inFileNamesTable[i] + ifnSize - suffixSize;
+        if (ofnSize <= ifnSize-suffixSize+1) { free(outFileName); ofnSize = ifnSize + 20; outFileName = (char*)malloc(ofnSize); if (outFileName==NULL) exit(1); }
+        if (ifnSize <= suffixSize  ||  strcmp(suffixPtr, suffix) != 0)
         {
             DISPLAYLEVEL(1, "File extension doesn't match expected LZ4_EXTENSION (%4s); will not process file: %s\n", suffix, inFileNamesTable[i]);
             skippedFiles++;
@@ -1039,6 +1047,5 @@ int LZ4IO_decompressMultipleFilenames(const char** inFileNamesTable, int ifntSiz
 
     LZ4IO_freeDResources(ress);
     free(outFileName);
-    free(ifnSuffix);
     return missingFiles + skippedFiles;
 }
